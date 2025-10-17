@@ -25,7 +25,8 @@ foreach ($clients as $id => $client) {
         'ip' => $client['ip'],
         'browser' => $client['browser'] ?? 'Unknown',
         'playing' => $client['playing'],
-        'duration' => time() - $client['connectedAt']
+        'duration' => time() - $client['connectedAt'],
+        'lastSeen' => $client['lastSeen']
     ];
 }
 

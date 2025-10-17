@@ -346,6 +346,25 @@ if ($active_video) {
             color: #666;
         }
 
+        .connection-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .connection-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .connection-stale {
+            background: #fff3cd;
+            color: #856404;
+        }
+
         .video-library {
             margin-top: 30px;
             padding-top: 30px;
@@ -725,10 +744,21 @@ if ($active_video) {
                 const duration = formatDuration(client.duration);
                 const browser = client.browser || 'Unknown';
 
+                // Calculate connection status based on lastSeen
+                const now = Math.floor(Date.now() / 1000);
+                const secondsSinceLastSeen = now - client.lastSeen;
+                let connectionBadge = '';
+
+                if (secondsSinceLastSeen < 60) {
+                    connectionBadge = '<span class="connection-status connection-active">🟢 Active</span>';
+                } else if (secondsSinceLastSeen < 120) {
+                    connectionBadge = '<span class="connection-status connection-stale">🟡 Stale</span>';
+                }
+
                 html += `
                     <div class="client-card">
                         <div class="client-header">
-                            <span class="client-ip">${client.ip} • ${browser}</span>
+                            <span class="client-ip">${client.ip} • ${browser}${connectionBadge}</span>
                             <span class="${statusClass}">${statusText}</span>
                         </div>
                         <div class="client-details">
