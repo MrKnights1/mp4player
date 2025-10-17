@@ -233,6 +233,7 @@ function handleMessage($clientKey, $message) {
             break;
 
         case 'video_uploaded':
+        case 'video_updated':
             // Broadcast to all video players
             broadcast(['type' => 'video_updated', 'message' => 'New video uploaded'], 'player');
             break;

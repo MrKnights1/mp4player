@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'config.php';
+require_once 'video-library.php';
 
 // Handle logout
 if (isset($_GET['logout'])) {
@@ -26,17 +27,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 // Check if logged in
 $is_logged_in = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
 
-// Get current video info
-$current_video = VIDEO_FILE;
-$video_exists = file_exists($current_video);
+// Get active video info from library
+$active_video = getActiveVideo();
+$all_videos = getAllVideos();
+$video_exists = $active_video !== null;
 $video_info = null;
 
-if ($video_exists) {
+if ($active_video) {
+    $video_path = VIDEO_DIRECTORY . $active_video['id'];
     $video_info = [
-        'name' => basename($current_video),
-        'size' => filesize($current_video),
-        'modified' => filemtime($current_video),
-        'modified_date' => date('Y-m-d H:i:s', filemtime($current_video))
+        'id' => $active_video['id'],
+        'name' => $active_video['original_name'],
+        'size' => $active_video['size'],
+        'uploaded_at' => $active_video['uploaded_at']
     ];
 }
 ?>
@@ -205,40 +208,11 @@ if ($video_exists) {
             color: #333;
         }
 
-        .upload-section {
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-
         .header-actions {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 30px;
-            background: #e0e0e0;
-            border-radius: 5px;
-            overflow: hidden;
-            margin-top: 10px;
-            display: none;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            width: 0%;
-            transition: width 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
         }
 
         .video-preview {
@@ -370,6 +344,27 @@ if ($video_exists) {
             font-size: 12px;
             color: #666;
         }
+
+        .video-library {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .video-library-header {
+            margin-bottom: 15px;
+        }
+
+        .video-library-header h3 {
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 18px;
+        }
+
+        .video-count {
+            color: #666;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -407,7 +402,7 @@ if ($video_exists) {
 
             <?php if ($video_exists): ?>
                 <div class="info-box">
-                    <h3>Current Video</h3>
+                    <h3>Currently Active Video</h3>
                     <div class="info-item">
                         <span class="info-label">File:</span>
                         <span class="info-value"><?php echo htmlspecialchars($video_info['name']); ?></span>
@@ -417,19 +412,35 @@ if ($video_exists) {
                         <span class="info-value"><?php echo number_format($video_info['size'] / 1024 / 1024, 2); ?> MB</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">Last Modified:</span>
-                        <span class="info-value"><?php echo htmlspecialchars($video_info['modified_date']); ?></span>
+                        <span class="info-label">Uploaded:</span>
+                        <span class="info-value"><?php echo htmlspecialchars($video_info['uploaded_at']); ?></span>
                     </div>
                 </div>
 
                 <div class="video-preview">
                     <video controls width="100%">
-                        <source src="<?php echo htmlspecialchars($current_video); ?>?t=<?php echo time(); ?>" type="video/mp4">
+                        <source src="videos/<?php echo htmlspecialchars($video_info['id']); ?>?t=<?php echo time(); ?>" type="video/mp4">
                     </video>
                 </div>
             <?php else: ?>
                 <div class="error">No video file found. Please upload a video.</div>
             <?php endif; ?>
+
+            <div class="video-library">
+                <div class="video-library-header">
+                    <div>
+                        <h3>Quick Actions</h3>
+                    </div>
+                </div>
+
+                <div style="text-align: center; padding: 30px 0;">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        <strong><?php echo count($all_videos); ?> video(s)</strong> in your library<br>
+                        Upload new videos, rename, delete, and switch between videos
+                    </p>
+                    <a href="videos.php" class="btn btn-primary">Go to Video Manager</a>
+                </div>
+            </div>
 
             <div class="info-box" style="border-left-color: #28a745; margin-top: 20px;">
                 <h3>TV Connection Status</h3>
@@ -465,27 +476,9 @@ if ($video_exists) {
                 </div>
             </div>
 
-            <div class="upload-section">
-                <h3>Upload New Video</h3>
-
-                <div id="upload-status"></div>
-
-                <form id="upload-form" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <label for="video-file">Select MP4 Video (Max: <?php echo MAX_UPLOAD_SIZE; ?>MB)</label>
-                        <input type="file" id="video-file" name="video" accept="video/mp4" required>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Upload Video</button>
-
-                    <div class="progress-bar" id="progress-bar">
-                        <div class="progress-fill" id="progress-fill">0%</div>
-                    </div>
-                </form>
-            </div>
-
             <div class="links">
                 <a href="index.php" class="btn btn-secondary" target="_blank">View Player</a>
+                <a href="videos.php" class="btn btn-primary">Manage Videos</a>
             </div>
 
         <?php endif; ?>
@@ -493,92 +486,6 @@ if ($video_exists) {
 
     <?php if ($is_logged_in): ?>
     <script>
-        const uploadForm = document.getElementById('upload-form');
-        const uploadStatus = document.getElementById('upload-status');
-        const progressBar = document.getElementById('progress-bar');
-        const progressFill = document.getElementById('progress-fill');
-        const videoFile = document.getElementById('video-file');
-
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const file = videoFile.files[0];
-            if (!file) {
-                showError('Please select a file');
-                return;
-            }
-
-            // Check file type
-            if (!file.type.includes('video/mp4')) {
-                showError('Please select an MP4 video file');
-                return;
-            }
-
-            // Check file size
-            const maxSize = <?php echo MAX_UPLOAD_SIZE; ?> * 1024 * 1024;
-            if (file.size > maxSize) {
-                showError('File is too large. Maximum size: <?php echo MAX_UPLOAD_SIZE; ?>MB');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('video', file);
-
-            // Show progress bar
-            progressBar.style.display = 'block';
-            uploadStatus.innerHTML = '';
-
-            try {
-                const xhr = new XMLHttpRequest();
-
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percentComplete = (e.loaded / e.total) * 100;
-                        progressFill.style.width = percentComplete + '%';
-                        progressFill.textContent = Math.round(percentComplete) + '%';
-                    }
-                });
-
-                xhr.addEventListener('load', () => {
-                    if (xhr.status === 200) {
-                        const response = JSON.parse(xhr.responseText);
-                        if (response.success) {
-                            showSuccess('Video uploaded successfully! It will be active at midnight (00:00).');
-                            setTimeout(() => {
-                                location.reload();
-                            }, 2000);
-                        } else {
-                            showError(response.error || 'Upload failed');
-                            progressBar.style.display = 'none';
-                        }
-                    } else {
-                        showError('Upload failed. Server error.');
-                        progressBar.style.display = 'none';
-                    }
-                });
-
-                xhr.addEventListener('error', () => {
-                    showError('Upload failed. Network error.');
-                    progressBar.style.display = 'none';
-                });
-
-                xhr.open('POST', 'upload.php');
-                xhr.send(formData);
-
-            } catch (error) {
-                showError('Upload failed: ' + error.message);
-                progressBar.style.display = 'none';
-            }
-        });
-
-        function showError(message) {
-            uploadStatus.innerHTML = '<div class="error">' + message + '</div>';
-        }
-
-        function showSuccess(message) {
-            uploadStatus.innerHTML = '<div class="success">' + message + '</div>';
-        }
-
         // Settings functionality
         const enableSoundToggle = document.getElementById('enable-sound');
         const settingsStatus = document.getElementById('settings-status');

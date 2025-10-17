@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'config.php';
+require_once 'video-library.php';
 
 header('Content-Type: application/json');
 
@@ -67,32 +68,30 @@ if ($fileSize > $maxFileSize) {
     exit;
 }
 
-// Move uploaded file to destination
-$destinationPath = VIDEO_FILE;
-
-// Create backup of existing video if it exists (keep only last 2 backups)
-if (file_exists($destinationPath)) {
-    $backup1Path = 'video.backup1.mp4';
-    $backup2Path = 'video.backup2.mp4';
-
-    // Delete oldest backup (backup2) if it exists
-    if (file_exists($backup2Path)) {
-        unlink($backup2Path);
-    }
-
-    // Move backup1 to backup2 if it exists
-    if (file_exists($backup1Path)) {
-        rename($backup1Path, $backup2Path);
-    }
-
-    // Move current video to backup1
-    rename($destinationPath, $backup1Path);
+// Create videos directory if it doesn't exist
+if (!is_dir(VIDEO_DIRECTORY)) {
+    mkdir(VIDEO_DIRECTORY, 0755, true);
 }
+
+// Generate unique filename with timestamp
+$timestamp = time();
+$sanitizedName = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
+$uniqueFilename = $timestamp . '_' . $sanitizedName . '.mp4';
+$destinationPath = VIDEO_DIRECTORY . $uniqueFilename;
 
 // Move the uploaded file
 if (move_uploaded_file($fileTmpPath, $destinationPath)) {
     // Set proper permissions
     chmod($destinationPath, 0644);
+
+    // Add video to library
+    if (!addVideoToLibrary($uniqueFilename, $fileName, $fileSize)) {
+        // Failed to add to library, delete uploaded file
+        unlink($destinationPath);
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to add video to library']);
+        exit;
+    }
 
     // Trigger WebSocket notification
     require_once 'ws-notify.php';
@@ -101,16 +100,12 @@ if (move_uploaded_file($fileTmpPath, $destinationPath)) {
     echo json_encode([
         'success' => true,
         'message' => 'Video uploaded successfully',
-        'filename' => basename($destinationPath),
+        'filename' => $uniqueFilename,
+        'original_name' => $fileName,
         'size' => $fileSize,
         'uploaded_at' => date('Y-m-d H:i:s')
     ]);
 } else {
-    // Restore backup if move failed
-    if (file_exists('video.backup1.mp4')) {
-        rename('video.backup1.mp4', $destinationPath);
-    }
-
     http_response_code(500);
     echo json_encode(['error' => 'Failed to save uploaded file']);
 }
