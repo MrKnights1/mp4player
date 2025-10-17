@@ -2,6 +2,9 @@
 session_start();
 require_once 'config.php';
 require_once 'video-library.php';
+require_once 'vendor/autoload.php';
+
+use Pusher\Pusher;
 
 header('Content-Type: application/json');
 
@@ -59,9 +62,25 @@ switch ($action) {
         }
 
         if (setActiveVideo($videoId)) {
-            // Trigger WebSocket notification
-            require_once 'ws-notify.php';
-            sendWebSocketNotification('video_updated', 'Active video changed');
+            // Trigger Pusher notification to all connected players
+            try {
+                $pusher = new Pusher(
+                    PUSHER_KEY,
+                    PUSHER_SECRET,
+                    PUSHER_APP_ID,
+                    [
+                        'cluster' => PUSHER_CLUSTER,
+                        'useTLS' => true
+                    ]
+                );
+
+                $pusher->trigger('video-channel', 'video-updated', [
+                    'message' => 'Active video changed',
+                    'video_id' => $videoId
+                ]);
+            } catch (Exception $e) {
+                error_log('Pusher notification failed: ' . $e->getMessage());
+            }
 
             echo json_encode([
                 'success' => true,

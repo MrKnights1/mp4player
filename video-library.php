@@ -1,8 +1,48 @@
 <?php
 // Video library management functions
 
+require_once __DIR__ . '/vendor/autoload.php';
+
 define('VIDEO_LIBRARY_FILE', __DIR__ . '/videos.json');
 define('VIDEO_DIRECTORY', __DIR__ . '/videos/');
+
+/**
+ * Get video duration in seconds
+ */
+function getVideoDuration($videoPath) {
+    try {
+        $getID3 = new getID3;
+        $fileInfo = $getID3->analyze($videoPath);
+
+        if (isset($fileInfo['playtime_seconds'])) {
+            return round($fileInfo['playtime_seconds']);
+        }
+
+        return null;
+    } catch (Exception $e) {
+        error_log('Failed to get video duration: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Format duration in seconds to human-readable format
+ */
+function formatDuration($seconds) {
+    if ($seconds === null) {
+        return 'Unknown';
+    }
+
+    $hours = floor($seconds / 3600);
+    $minutes = floor(($seconds % 3600) / 60);
+    $secs = $seconds % 60;
+
+    if ($hours > 0) {
+        return sprintf('%d:%02d:%02d', $hours, $minutes, $secs);
+    } else {
+        return sprintf('%d:%02d', $minutes, $secs);
+    }
+}
 
 /**
  * Load the video library from JSON file
@@ -79,12 +119,18 @@ function addVideoToLibrary($filename, $originalName, $size) {
     $library = loadVideoLibrary();
 
     $videoId = $filename;
+
+    // Get video duration
+    $videoPath = VIDEO_DIRECTORY . $filename;
+    $duration = getVideoDuration($videoPath);
+
     $library['videos'][$videoId] = [
         'id' => $videoId,
         'filename' => $filename,
         'original_name' => $originalName,
         'uploaded_at' => date('Y-m-d H:i:s'),
         'size' => $size,
+        'duration' => $duration,
         'active' => false
     ];
 
@@ -92,6 +138,20 @@ function addVideoToLibrary($filename, $originalName, $size) {
     if (count($library['videos']) === 1) {
         $library['active_video'] = $videoId;
         $library['videos'][$videoId]['active'] = true;
+
+        // Create symlink for the active video
+        $activeVideoPath = VIDEO_DIRECTORY . $videoId;
+        $symlinkPath = __DIR__ . '/video.mp4';
+
+        // Remove old symlink/file if exists
+        if (file_exists($symlinkPath)) {
+            if (is_link($symlinkPath)) {
+                unlink($symlinkPath);
+            }
+        }
+
+        // Create symlink
+        symlink($activeVideoPath, $symlinkPath);
     }
 
     return saveVideoLibrary($library);

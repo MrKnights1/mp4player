@@ -1,7 +1,15 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/upload-errors.log');
+
 session_start();
 require_once 'config.php';
 require_once 'video-library.php';
+require_once 'vendor/autoload.php';
+
+use Pusher\Pusher;
 
 header('Content-Type: application/json');
 
@@ -93,9 +101,25 @@ if (move_uploaded_file($fileTmpPath, $destinationPath)) {
         exit;
     }
 
-    // Trigger WebSocket notification
-    require_once 'ws-notify.php';
-    sendWebSocketNotification('video_uploaded', 'New video uploaded');
+    // Trigger Pusher notification
+    try {
+        $pusher = new Pusher(
+            PUSHER_KEY,
+            PUSHER_SECRET,
+            PUSHER_APP_ID,
+            [
+                'cluster' => PUSHER_CLUSTER,
+                'useTLS' => true
+            ]
+        );
+
+        $pusher->trigger('video-channel', 'video-updated', [
+            'message' => 'New video uploaded'
+        ]);
+    } catch (Exception $e) {
+        // Log error but don't fail the upload
+        error_log('Pusher notification failed: ' . $e->getMessage());
+    }
 
     echo json_encode([
         'success' => true,
@@ -106,6 +130,8 @@ if (move_uploaded_file($fileTmpPath, $destinationPath)) {
         'uploaded_at' => date('Y-m-d H:i:s')
     ]);
 } else {
+    $error = error_get_last();
+    error_log('Failed to move uploaded file: ' . print_r($error, true));
     http_response_code(500);
     echo json_encode(['error' => 'Failed to save uploaded file']);
 }

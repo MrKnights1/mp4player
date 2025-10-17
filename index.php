@@ -1,4 +1,16 @@
-<?php require_once 'config.php'; ?>
+<?php
+require_once 'config.php';
+require_once 'video-library.php';
+
+// Get the active video from library
+$active_video = getActiveVideo();
+$video_url = 'video.mp4'; // Fallback to symlink
+
+if ($active_video) {
+    // Use the direct path from videos directory with cache busting
+    $video_url = 'videos/' . $active_video['id'] . '?t=' . time();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,11 +73,14 @@
 <body>
     <div id="video-container">
         <video id="video-player" autoplay loop <?php echo ENABLE_SOUND ? '' : 'muted'; ?> playsinline>
-            <source src="<?php echo VIDEO_FILE; ?>" type="video/mp4">
+            <source src="<?php echo $video_url; ?>" type="video/mp4">
             Your browser does not support the video tag.
         </video>
     </div>
     <div id="status"></div>
+
+    <!-- Pusher JS Library -->
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
 
     <script>
         const video = document.getElementById('video-player');
@@ -162,87 +177,87 @@
             }, 60000); // Check every 60 seconds
         }
 
-        // WebSocket connection
-        let ws = null;
+        // Pusher connection
+        let pusher = null;
         let isPlaying = false;
-        let reconnectAttempts = 0;
+        let heartbeatInterval = null;
 
-        function connectWebSocket() {
-            const wsUrl = 'ws://' + window.location.hostname + ':9090';
-            console.log('[WS] Connecting to:', wsUrl);
+        // Get or create persistent client ID
+        let clientId = localStorage.getItem('tv_client_id');
+        if (!clientId) {
+            clientId = 'player_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('tv_client_id', clientId);
+        }
+        console.log('[Player] Client ID:', clientId);
 
+        function initPusher() {
+            console.log('[Pusher] Initializing...');
+
+            // Initialize Pusher
+            pusher = new Pusher('<?php echo PUSHER_KEY; ?>', {
+                cluster: '<?php echo PUSHER_CLUSTER; ?>',
+                forceTLS: true
+            });
+
+            // Subscribe to video channel
+            const channel = pusher.subscribe('video-channel');
+
+            channel.bind('pusher:subscription_succeeded', function() {
+                console.log('[Pusher] Connected successfully');
+
+                // Send initial heartbeat
+                sendHeartbeat();
+
+                // Start heartbeat interval (every 60 seconds)
+                heartbeatInterval = setInterval(sendHeartbeat, 60000);
+            });
+
+            channel.bind('video-updated', function(data) {
+                console.log('[Pusher] New video uploaded!', data);
+                showStatus('New video available! Updating...', 2000);
+                setTimeout(() => location.reload(), 2000);
+            });
+
+            channel.bind('refresh', function(data) {
+                console.log('[Pusher] Remote refresh requested!', data);
+                showStatus('Refreshing...', 1000);
+                setTimeout(() => location.reload(), 1000);
+            });
+
+            pusher.connection.bind('error', function(err) {
+                console.error('[Pusher] Connection error:', err);
+            });
+        }
+
+        async function sendHeartbeat() {
             try {
-                ws = new WebSocket(wsUrl);
+                const response = await fetch('get-ip.php');
+                const data = await response.json();
+                const clientIp = data.success ? data.ip : 'Unknown';
 
-                ws.onopen = function() {
-                    console.log('[WS] Connected successfully');
-                    reconnectAttempts = 0;
+                await fetch('pusher-heartbeat.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        clientId: clientId,
+                        ip: clientIp,
+                        playing: isPlaying,
+                        timestamp: Date.now(),
+                        userAgent: navigator.userAgent
+                    })
+                });
 
-                    // Small delay to ensure connection is stable
-                    setTimeout(() => {
-                        // Register as video player
-                        const registerMsg = JSON.stringify({
-                            type: 'register',
-                            client_type: 'player'
-                        });
-                        console.log('[WS] Sending registration:', registerMsg);
-                        ws.send(registerMsg);
-
-                        // Send initial playback status
-                        setTimeout(() => {
-                            sendPlaybackStatus();
-                        }, 100);
-                    }, 100);
-                };
-
-                ws.onmessage = function(event) {
-                    console.log('[WS] Message received:', event.data);
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'video_updated') {
-                            console.log('[WS] New video uploaded! Reloading page...');
-                            showStatus('New video available! Updating...', 2000);
-                            setTimeout(() => location.reload(), 2000);
-                        } else if (data.type === 'refresh') {
-                            console.log('[WS] Remote refresh requested! Reloading page...');
-                            showStatus('Refreshing...', 1000);
-                            setTimeout(() => location.reload(), 1000);
-                        }
-                    } catch (error) {
-                        console.error('[WS] Message parse error:', error);
-                    }
-                };
-
-                ws.onerror = function(error) {
-                    console.error('[WS] Error:', error);
-                };
-
-                ws.onclose = function(event) {
-                    console.log('[WS] Disconnected. Code:', event.code, 'Reason:', event.reason);
-                    reconnectAttempts++;
-                    const delay = Math.min(3000 * reconnectAttempts, 15000);
-                    console.log('[WS] Reconnecting in', delay, 'ms...');
-                    setTimeout(connectWebSocket, delay);
-                };
-
+                console.log('[Pusher] Heartbeat sent - playing:', isPlaying);
             } catch (error) {
-                console.error('[WS] Connection error:', error);
-                setTimeout(connectWebSocket, 3000);
+                console.error('[Pusher] Heartbeat error:', error);
             }
         }
 
         function sendPlaybackStatus() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                const msg = JSON.stringify({
-                    type: 'playback_status',
-                    playing: isPlaying
-                });
-                console.log('[WS] Sending playback status:', msg);
-                ws.send(msg);
-            } else {
-                console.log('[WS] Cannot send - not connected. State:', ws ? ws.readyState : 'null');
-            }
+            // Send status immediately
+            sendHeartbeat();
         }
 
 
@@ -272,8 +287,8 @@
             // Start the midnight check scheduler
             scheduleMidnightCheck();
 
-            // Connect to WebSocket
-            connectWebSocket();
+            // Connect to Pusher
+            initPusher();
 
             // Ensure video plays
             video.play().catch(err => {

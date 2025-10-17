@@ -442,6 +442,7 @@ $active_video = getActiveVideo();
 
                         <div class="video-meta">
                             <span class="video-meta-item">📦 <?php echo number_format($video['size'] / 1024 / 1024, 2); ?> MB</span>
+                            <span class="video-meta-item">⏱ <?php echo formatDuration($video['duration'] ?? null); ?></span>
                             <span class="video-meta-item">📅 <?php echo htmlspecialchars($video['uploaded_at']); ?></span>
                         </div>
 

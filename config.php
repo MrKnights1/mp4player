@@ -36,4 +36,10 @@ define('ADMIN_USERNAME', $env['ADMIN_USERNAME'] ?? 'admin');
 define('ADMIN_PASSWORD', $env['ADMIN_PASSWORD'] ?? 'admin123');
 define('MAX_UPLOAD_SIZE', $env['MAX_UPLOAD_SIZE'] ?? '500');
 define('ENABLE_SOUND', strtolower($env['ENABLE_SOUND'] ?? 'false') === 'true');
+
+// Pusher configuration
+define('PUSHER_APP_ID', $env['PUSHER_APP_ID'] ?? '');
+define('PUSHER_KEY', $env['PUSHER_KEY'] ?? '');
+define('PUSHER_SECRET', $env['PUSHER_SECRET'] ?? '');
+define('PUSHER_CLUSTER', $env['PUSHER_CLUSTER'] ?? 'eu');
 ?>

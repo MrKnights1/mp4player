@@ -3,3 +3,8 @@
 video.mp4
 /videos
 videos.json
+vendor
+clients.json
+video-library.json
+upload-errors.log
+migrate-video-durations.php

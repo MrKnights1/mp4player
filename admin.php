@@ -39,7 +39,8 @@ if ($active_video) {
         'id' => $active_video['id'],
         'name' => $active_video['original_name'],
         'size' => $active_video['size'],
-        'uploaded_at' => $active_video['uploaded_at']
+        'uploaded_at' => $active_video['uploaded_at'],
+        'duration' => $active_video['duration'] ?? null
     ];
 }
 ?>
@@ -412,6 +413,10 @@ if ($active_video) {
                         <span class="info-value"><?php echo number_format($video_info['size'] / 1024 / 1024, 2); ?> MB</span>
                     </div>
                     <div class="info-item">
+                        <span class="info-label">Duration:</span>
+                        <span class="info-value"><?php echo formatDuration($video_info['duration']); ?></span>
+                    </div>
+                    <div class="info-item">
                         <span class="info-label">Uploaded:</span>
                         <span class="info-value"><?php echo htmlspecialchars($video_info['uploaded_at']); ?></span>
                     </div>
@@ -423,7 +428,26 @@ if ($active_video) {
                     </video>
                 </div>
             <?php else: ?>
-                <div class="error">No video file found. Please upload a video.</div>
+                <div class="error" style="margin-bottom: 30px;">No video file found. Please upload a video below.</div>
+
+                <div style="background: #f8f9fa; border: 2px dashed #667eea; border-radius: 8px; padding: 30px; text-align: center;">
+                    <h3 style="color: #333; margin-bottom: 10px; font-size: 18px;">Upload Your First Video</h3>
+                    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">Get started by uploading an MP4 video (Max: <?php echo MAX_UPLOAD_SIZE; ?>MB)</p>
+
+                    <form id="upload-form-empty" enctype="multipart/form-data" style="display: inline-block; text-align: left; max-width: 400px; width: 100%;">
+                        <div style="margin-bottom: 15px;">
+                            <label for="video-file-empty" style="display: block; color: #333; font-weight: 500; font-size: 14px; margin-bottom: 5px;">Select MP4 Video</label>
+                            <input type="file" id="video-file-empty" name="video" accept="video/mp4" required style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 5px; font-size: 14px; width: 100%;">
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Upload Video</button>
+
+                        <div id="progress-bar-empty" style="width: 100%; height: 30px; background: #e0e0e0; border-radius: 5px; overflow: hidden; margin-top: 15px; display: none;">
+                            <div id="progress-fill-empty" style="height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: 0%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;">0%</div>
+                        </div>
+                    </form>
+                    <div id="upload-status-empty"></div>
+                </div>
             <?php endif; ?>
 
             <div class="video-library">
@@ -445,7 +469,7 @@ if ($active_video) {
             <div class="info-box" style="border-left-color: #28a745; margin-top: 20px;">
                 <h3>TV Connection Status</h3>
                 <div class="info-item">
-                    <span class="info-label">WebSocket:</span>
+                    <span class="info-label">Pusher:</span>
                     <span class="info-value" id="ws-status">Disconnected</span>
                 </div>
                 <div class="info-item">
@@ -485,7 +509,99 @@ if ($active_video) {
     </div>
 
     <?php if ($is_logged_in): ?>
+    <!-- Pusher JS Library -->
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+
     <script>
+        // Upload functionality for empty state
+        const uploadFormEmpty = document.getElementById('upload-form-empty');
+        if (uploadFormEmpty) {
+            const progressBarEmpty = document.getElementById('progress-bar-empty');
+            const progressFillEmpty = document.getElementById('progress-fill-empty');
+            const videoFileEmpty = document.getElementById('video-file-empty');
+            const uploadStatusEmpty = document.getElementById('upload-status-empty');
+
+            uploadFormEmpty.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const file = videoFileEmpty.files[0];
+                if (!file) {
+                    showUploadError('Please select a file');
+                    return;
+                }
+
+                // Check file type
+                if (!file.type.includes('video/mp4')) {
+                    showUploadError('Please select an MP4 video file');
+                    return;
+                }
+
+                // Check file size
+                const maxSize = <?php echo MAX_UPLOAD_SIZE; ?> * 1024 * 1024;
+                if (file.size > maxSize) {
+                    showUploadError('File is too large. Maximum size: <?php echo MAX_UPLOAD_SIZE; ?>MB');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('video', file);
+
+                // Show progress bar
+                progressBarEmpty.style.display = 'block';
+                uploadStatusEmpty.innerHTML = '';
+
+                try {
+                    const xhr = new XMLHttpRequest();
+
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const percentComplete = (e.loaded / e.total) * 100;
+                            progressFillEmpty.style.width = percentComplete + '%';
+                            progressFillEmpty.textContent = Math.round(percentComplete) + '%';
+                        }
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status === 200) {
+                            const response = JSON.parse(xhr.responseText);
+                            if (response.success) {
+                                showUploadSuccess('Video uploaded successfully! Page will reload...');
+                                setTimeout(() => {
+                                    location.reload();
+                                }, 2000);
+                            } else {
+                                showUploadError(response.error || 'Upload failed');
+                                progressBarEmpty.style.display = 'none';
+                            }
+                        } else {
+                            showUploadError('Upload failed. Server error.');
+                            progressBarEmpty.style.display = 'none';
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        showUploadError('Upload failed. Network error.');
+                        progressBarEmpty.style.display = 'none';
+                    });
+
+                    xhr.open('POST', 'upload.php');
+                    xhr.send(formData);
+
+                } catch (error) {
+                    showUploadError('Upload failed: ' + error.message);
+                    progressBarEmpty.style.display = 'none';
+                }
+            });
+
+            function showUploadError(message) {
+                uploadStatusEmpty.innerHTML = '<div class="error" style="margin-top: 15px;">' + message + '</div>';
+            }
+
+            function showUploadSuccess(message) {
+                uploadStatusEmpty.innerHTML = '<div class="success" style="margin-top: 15px;">' + message + '</div>';
+            }
+        }
+
         // Settings functionality
         const enableSoundToggle = document.getElementById('enable-sound');
         const settingsStatus = document.getElementById('settings-status');
@@ -533,57 +649,65 @@ if ($active_video) {
             }, 3000);
         }
 
-        // WebSocket connection for TV status monitoring
-        let ws = null;
+        // Pusher connection for TV status monitoring
+        let pusher = null;
         const wsStatus = document.getElementById('ws-status');
         const tvCount = document.getElementById('tv-count');
         const tvList = document.getElementById('tv-list');
 
-        function connectWebSocket() {
-            const wsUrl = 'ws://' + window.location.hostname + ':9090';
-            console.log('Connecting to WebSocket:', wsUrl);
+        async function loadCurrentStatus() {
+            try {
+                const response = await fetch('get-clients.php');
+                const data = await response.json();
 
-            ws = new WebSocket(wsUrl);
+                if (data.success && data.clients) {
+                    console.log('[Admin] Loaded current status:', data.clients.length, 'clients');
+                    updateTVStatus(data.clients);
+                }
+            } catch (error) {
+                console.error('[Admin] Failed to load current status:', error);
+            }
+        }
 
-            ws.onopen = function() {
-                console.log('WebSocket connected');
+        function initPusher() {
+            console.log('[Pusher] Initializing admin panel...');
+
+            // Initialize Pusher
+            pusher = new Pusher('<?php echo PUSHER_KEY; ?>', {
+                cluster: '<?php echo PUSHER_CLUSTER; ?>',
+                forceTLS: true
+            });
+
+            // Subscribe to admin channel
+            const channel = pusher.subscribe('admin-channel');
+
+            channel.bind('pusher:subscription_succeeded', function() {
+                console.log('[Pusher] Admin connected successfully');
                 wsStatus.textContent = 'Connected';
                 wsStatus.style.color = '#28a745';
 
-                // Register as admin
-                ws.send(JSON.stringify({
-                    type: 'register',
-                    client_type: 'admin'
-                }));
-            };
+                // Load current status on page load
+                loadCurrentStatus();
+            });
 
-            ws.onmessage = function(event) {
-                console.log('[Admin WS] Raw message:', event.data);
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[Admin WS] Parsed message:', data);
-
-                    if (data.type === 'status_update') {
-                        console.log('[Admin WS] Status update received, clients:', data.clients);
-                        updateTVStatus(data.clients);
-                    }
-                } catch (error) {
-                    console.error('[Admin WS] Message parse error:', error);
+            channel.bind('status-update', function(data) {
+                console.log('[Pusher] Status update received:', data);
+                if (data.clients) {
+                    updateTVStatus(data.clients);
                 }
-            };
+            });
 
-            ws.onerror = function(error) {
-                console.error('WebSocket error:', error);
+            pusher.connection.bind('error', function(err) {
+                console.error('[Pusher] Connection error:', err);
                 wsStatus.textContent = 'Error';
                 wsStatus.style.color = '#dc3545';
-            };
+            });
 
-            ws.onclose = function() {
-                console.log('WebSocket disconnected, reconnecting in 3 seconds...');
+            pusher.connection.bind('disconnected', function() {
+                console.log('[Pusher] Disconnected');
                 wsStatus.textContent = 'Disconnected';
                 wsStatus.style.color = '#6c757d';
-                setTimeout(connectWebSocket, 3000);
-            };
+            });
         }
 
         function updateTVStatus(clients) {
@@ -599,11 +723,12 @@ if ($active_video) {
                 const statusClass = client.playing ? 'status-playing' : 'status-paused';
                 const statusText = client.playing ? '▶ Playing' : '⏸ Paused';
                 const duration = formatDuration(client.duration);
+                const browser = client.browser || 'Unknown';
 
                 html += `
                     <div class="client-card">
                         <div class="client-header">
-                            <span class="client-ip">${client.ip}</span>
+                            <span class="client-ip">${client.ip} • ${browser}</span>
                             <span class="${statusClass}">${statusText}</span>
                         </div>
                         <div class="client-details">
@@ -627,20 +752,34 @@ if ($active_video) {
 
         // Refresh All TVs button
         const refreshTVsBtn = document.getElementById('refresh-tvs-btn');
-        refreshTVsBtn.addEventListener('click', () => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                console.log('[Admin] Sending refresh command to all TVs');
-                ws.send(JSON.stringify({
-                    type: 'refresh_clients'
-                }));
-                alert('Refresh command sent to all connected TVs!');
-            } else {
-                alert('WebSocket not connected. Please wait...');
+        refreshTVsBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('pusher-broadcast.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        event: 'refresh_clients'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    console.log('[Admin] Refresh command sent to all TVs');
+                    alert('Refresh command sent to all connected TVs!');
+                } else {
+                    alert('Failed to send refresh command: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('[Admin] Refresh error:', error);
+                alert('Failed to send refresh command: ' + error.message);
             }
         });
 
-        // Start WebSocket connection
-        connectWebSocket();
+        // Start Pusher connection
+        initPusher();
     </script>
     <?php endif; ?>
 </body>
