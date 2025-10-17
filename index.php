@@ -55,18 +55,6 @@
             display: block;
         }
 
-        #ip-display {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            z-index: 1000;
-        }
 
     </style>
 </head>
@@ -77,7 +65,6 @@
             Your browser does not support the video tag.
         </video>
     </div>
-    <div id="ip-display">Loading...</div>
     <div id="status"></div>
 
     <script>
@@ -258,25 +245,9 @@
             }
         }
 
-        // Fetch and display IP address
-        async function displayIP() {
-            try {
-                const response = await fetch('get-ip.php');
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('ip-display').textContent = 'TV IP: ' + data.ip;
-                }
-            } catch (error) {
-                console.error('Failed to get IP:', error);
-                document.getElementById('ip-display').textContent = 'IP: Unknown';
-            }
-        }
 
         // Initialize
         async function init() {
-            // Display IP address
-            displayIP();
-
             // Get initial video info
             await checkVideoInfo().then(info => {
                 if (info) {
