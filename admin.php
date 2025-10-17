@@ -335,6 +335,41 @@ if ($video_exists) {
             font-size: 13px;
             color: #666;
         }
+
+        .client-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .client-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .client-ip {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .status-playing {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .status-paused {
+            color: #ffc107;
+            font-weight: 600;
+        }
+
+        .client-details {
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -396,6 +431,22 @@ if ($video_exists) {
                 <div class="error">No video file found. Please upload a video.</div>
             <?php endif; ?>
 
+            <div class="info-box" style="border-left-color: #28a745; margin-top: 20px;">
+                <h3>TV Connection Status</h3>
+                <div class="info-item">
+                    <span class="info-label">WebSocket:</span>
+                    <span class="info-value" id="ws-status">Disconnected</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Connected TVs:</span>
+                    <span class="info-value" id="tv-count">0</span>
+                </div>
+                <div id="tv-list" style="margin-top: 15px;"></div>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button id="refresh-tvs-btn" class="btn btn-secondary" style="width: 100%;">Refresh All TVs</button>
+                </div>
+            </div>
+
             <div class="settings-section">
                 <h3>Player Settings</h3>
                 <p class="subtitle">Configure video player options</p>
@@ -416,7 +467,6 @@ if ($video_exists) {
 
             <div class="upload-section">
                 <h3>Upload New Video</h3>
-                <p class="subtitle">The video will be updated at midnight (00:00)</p>
 
                 <div id="upload-status"></div>
 
@@ -575,6 +625,115 @@ if ($video_exists) {
                 settingsStatus.innerHTML = '';
             }, 3000);
         }
+
+        // WebSocket connection for TV status monitoring
+        let ws = null;
+        const wsStatus = document.getElementById('ws-status');
+        const tvCount = document.getElementById('tv-count');
+        const tvList = document.getElementById('tv-list');
+
+        function connectWebSocket() {
+            const wsUrl = 'ws://' + window.location.hostname + ':9090';
+            console.log('Connecting to WebSocket:', wsUrl);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                wsStatus.textContent = 'Connected';
+                wsStatus.style.color = '#28a745';
+
+                // Register as admin
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    client_type: 'admin'
+                }));
+            };
+
+            ws.onmessage = function(event) {
+                console.log('[Admin WS] Raw message:', event.data);
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[Admin WS] Parsed message:', data);
+
+                    if (data.type === 'status_update') {
+                        console.log('[Admin WS] Status update received, clients:', data.clients);
+                        updateTVStatus(data.clients);
+                    }
+                } catch (error) {
+                    console.error('[Admin WS] Message parse error:', error);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                wsStatus.textContent = 'Error';
+                wsStatus.style.color = '#dc3545';
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket disconnected, reconnecting in 3 seconds...');
+                wsStatus.textContent = 'Disconnected';
+                wsStatus.style.color = '#6c757d';
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        function updateTVStatus(clients) {
+            tvCount.textContent = clients.length;
+
+            if (clients.length === 0) {
+                tvList.innerHTML = '<p style="text-align: center; color: #999; padding: 10px;">No TVs connected</p>';
+                return;
+            }
+
+            let html = '';
+            clients.forEach(client => {
+                const statusClass = client.playing ? 'status-playing' : 'status-paused';
+                const statusText = client.playing ? '▶ Playing' : '⏸ Paused';
+                const duration = formatDuration(client.duration);
+
+                html += `
+                    <div class="client-card">
+                        <div class="client-header">
+                            <span class="client-ip">${client.ip}</span>
+                            <span class="${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="client-details">
+                            Connected: ${duration}
+                        </div>
+                    </div>
+                `;
+            });
+
+            tvList.innerHTML = html;
+        }
+
+        function formatDuration(seconds) {
+            if (seconds < 60) return seconds + 's';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + 'm';
+            const hours = Math.floor(minutes / 60);
+            const remainingMinutes = minutes % 60;
+            return hours + 'h ' + remainingMinutes + 'm';
+        }
+
+        // Refresh All TVs button
+        const refreshTVsBtn = document.getElementById('refresh-tvs-btn');
+        refreshTVsBtn.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log('[Admin] Sending refresh command to all TVs');
+                ws.send(JSON.stringify({
+                    type: 'refresh_clients'
+                }));
+                alert('Refresh command sent to all connected TVs!');
+            } else {
+                alert('WebSocket not connected. Please wait...');
+            }
+        });
+
+        // Start WebSocket connection
+        connectWebSocket();
     </script>
     <?php endif; ?>
 </body>

@@ -94,6 +94,10 @@ if (move_uploaded_file($fileTmpPath, $destinationPath)) {
     // Set proper permissions
     chmod($destinationPath, 0644);
 
+    // Trigger WebSocket notification
+    require_once 'ws-notify.php';
+    sendWebSocketNotification('video_uploaded', 'New video uploaded');
+
     echo json_encode([
         'success' => true,
         'message' => 'Video uploaded successfully',

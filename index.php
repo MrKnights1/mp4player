@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="86400">
     <title>24/7 MP4 Player</title>
     <style>
         * {
@@ -54,6 +55,19 @@
             display: block;
         }
 
+        #ip-display {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 1000;
+        }
+
     </style>
 </head>
 <body>
@@ -63,6 +77,7 @@
             Your browser does not support the video tag.
         </video>
     </div>
+    <div id="ip-display">Loading...</div>
     <div id="status"></div>
 
     <script>
@@ -160,8 +175,108 @@
             }, 60000); // Check every 60 seconds
         }
 
+        // WebSocket connection
+        let ws = null;
+        let isPlaying = false;
+        let reconnectAttempts = 0;
+
+        function connectWebSocket() {
+            const wsUrl = 'ws://' + window.location.hostname + ':9090';
+            console.log('[WS] Connecting to:', wsUrl);
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    console.log('[WS] Connected successfully');
+                    reconnectAttempts = 0;
+
+                    // Small delay to ensure connection is stable
+                    setTimeout(() => {
+                        // Register as video player
+                        const registerMsg = JSON.stringify({
+                            type: 'register',
+                            client_type: 'player'
+                        });
+                        console.log('[WS] Sending registration:', registerMsg);
+                        ws.send(registerMsg);
+
+                        // Send initial playback status
+                        setTimeout(() => {
+                            sendPlaybackStatus();
+                        }, 100);
+                    }, 100);
+                };
+
+                ws.onmessage = function(event) {
+                    console.log('[WS] Message received:', event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'video_updated') {
+                            console.log('[WS] New video uploaded! Reloading page...');
+                            showStatus('New video available! Updating...', 2000);
+                            setTimeout(() => location.reload(), 2000);
+                        } else if (data.type === 'refresh') {
+                            console.log('[WS] Remote refresh requested! Reloading page...');
+                            showStatus('Refreshing...', 1000);
+                            setTimeout(() => location.reload(), 1000);
+                        }
+                    } catch (error) {
+                        console.error('[WS] Message parse error:', error);
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    console.error('[WS] Error:', error);
+                };
+
+                ws.onclose = function(event) {
+                    console.log('[WS] Disconnected. Code:', event.code, 'Reason:', event.reason);
+                    reconnectAttempts++;
+                    const delay = Math.min(3000 * reconnectAttempts, 15000);
+                    console.log('[WS] Reconnecting in', delay, 'ms...');
+                    setTimeout(connectWebSocket, delay);
+                };
+
+            } catch (error) {
+                console.error('[WS] Connection error:', error);
+                setTimeout(connectWebSocket, 3000);
+            }
+        }
+
+        function sendPlaybackStatus() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const msg = JSON.stringify({
+                    type: 'playback_status',
+                    playing: isPlaying
+                });
+                console.log('[WS] Sending playback status:', msg);
+                ws.send(msg);
+            } else {
+                console.log('[WS] Cannot send - not connected. State:', ws ? ws.readyState : 'null');
+            }
+        }
+
+        // Fetch and display IP address
+        async function displayIP() {
+            try {
+                const response = await fetch('get-ip.php');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('ip-display').textContent = 'TV IP: ' + data.ip;
+                }
+            } catch (error) {
+                console.error('Failed to get IP:', error);
+                document.getElementById('ip-display').textContent = 'IP: Unknown';
+            }
+        }
+
         // Initialize
         async function init() {
+            // Display IP address
+            displayIP();
+
             // Get initial video info
             await checkVideoInfo().then(info => {
                 if (info) {
@@ -186,6 +301,9 @@
             // Start the midnight check scheduler
             scheduleMidnightCheck();
 
+            // Connect to WebSocket
+            connectWebSocket();
+
             // Ensure video plays
             video.play().catch(err => {
                 console.log('Autoplay prevented:', err);
@@ -195,10 +313,44 @@
         // Start when page loads
         window.addEventListener('load', init);
 
-        // Handle visibility change to keep video playing
+        // Track video playback state
+        video.addEventListener('play', () => {
+            isPlaying = true;
+            console.log('[Player] Video playing');
+            sendPlaybackStatus();
+        });
+
+        video.addEventListener('playing', () => {
+            isPlaying = true;
+            sendPlaybackStatus();
+        });
+
+        video.addEventListener('pause', () => {
+            // Don't report pause if tab is hidden (browser auto-pauses background tabs)
+            if (!document.hidden) {
+                isPlaying = false;
+                console.log('[Player] Video paused');
+                sendPlaybackStatus();
+            } else {
+                console.log('[Player] Video paused by browser (tab hidden) - ignoring');
+            }
+        });
+
+        video.addEventListener('ended', () => {
+            // Video has loop attribute, so this shouldn't happen
+            isPlaying = false;
+            sendPlaybackStatus();
+        });
+
+        // Handle visibility change
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
+                console.log('[Player] Tab visible - ensuring video plays');
                 video.play().catch(err => console.log('Play error:', err));
+                isPlaying = true;
+                sendPlaybackStatus();
+            } else {
+                console.log('[Player] Tab hidden - keeping playing status');
             }
         });
 
