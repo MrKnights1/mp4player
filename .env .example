@@ -1,0 +1,12 @@
+# Video file path (relative to this directory)
+VIDEO_FILE=video.mp4
+
+# Port to run the PHP server on
+SERVER_PORT=3211
+
+# Admin credentials
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin
+
+# Max upload size in MB
+MAX_UPLOAD_SIZE=500
